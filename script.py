@@ -1,43 +1,30 @@
-
-#-*- coding: utf-8 -*-
-'''
-Tech Spec of Batch Inviter	
-
-Input a list of emails (on a text document for example) - Check
-
-Read those emails onto an array - Check
-
-Invite people (rate limited) - check
-
-When the invalid error message is returned stop - check
-
-Ping every 5 seconds
-
-If it allows, then keep sending rate limited emails - check
-
-Have a dashboard of sorts that shows which ones are sent and which ones are haven’t'''
-
 import requests
 import json
 import time
 import ratelimit
 from ratelimit import limits, sleep_and_retry
 import csv
+import sys
 
 
 #Constants
-token = "xoxp-908939173762-923938115046-921726053936-53f9396973a04bf9e2c3d0577b35a9cc"
+
+'''
+Create a Slakc Legacy Token and use that as your token
+Channel = the channel if od the channel you want your user to be invited into
+fileName = input file of the emails
+writeName = putput files of emails that have received invites
+'''
+token = ""
 channel = "CT3MZKFB7"
 fileName = "emails.csv"
 writeName = "emailsDone.csv"
 
-def inputEmails():
-	with open(fileName) as file_in:
-		for email in file_in:
-			emailList.append(email)
+readEmails = set()
 
-ONE_MINUTE = 60
-@limits(calls = 240, period = ONE_MINUTE)
+#Rate limited calls to the API 
+TWO_SECONDS = 2
+@limits(calls = 1, period = TWO_SECONDS)
 def APICall(email, real_name):
 	response = requests.get('https://slack.com/api/users.admin.invite?token=' + token + '&email=' + email + "&channels=" + channel + "&real_name=" + real_name)
 
@@ -46,6 +33,30 @@ def APICall(email, real_name):
 	else:
 		return None
 
+def tryEmail(email, real_name):
+	while True:
+		try:
+			result = APICall(email, real_name)
+			print(result)
+			if result["ok"] == False:
+				if result["error"] == "invite_limit_reached":
+					time.sleep(0.2)
+				elif result["error"] == "already_in_team" or result["error"] == "already_invited" or result["error"] == "already_in_team_invited_user":
+					return
+				else:
+					errorMessage = email + " failed because of: " + str(result["error"])
+					sys.exit(errorMessage)
+
+
+			elif result["ok"] == True:
+				with open(writeName, 'a') as f:
+				    writer = csv.writer(f)
+				    writer.writerow([email, "1"])
+				return
+		except ratelimit.RateLimitException:
+			pass
+
+
 
 def batchInvite():
 	with open(fileName) as csvFile:
@@ -53,34 +64,21 @@ def batchInvite():
 		for row in reader:
 			email = str(row[0])
 			real_name = str(row[1])
-			if row[2] != 1:
-				print(email)
-				print(real_name)
-				work = 0
+			if email not in readEmails:
+				if row[2] != 1:
+					print(email)
+					print(real_name)
+					tryEmail(email, real_name)
 
-				while (work == 0):
-					try:
-						result = APICall(email, real_name)
-						print(result)
-						if result["ok"] == False:
-							if result["error"] == "invite_limit_reached":
-								time.sleep(0.2)
-							elif result["error"] == "already_in_team" or result["error"] == "already_invited" or result["error"] == "already_in_team_invited_user":
-								work = 1
 
-						elif result["ok"] == True:
-							work = 1
-							with open(writeName, 'a') as f:
-							    writer = csv.writer(f)
-							    writer.writerow([email, "1"])
-					except ratelimit.RateLimitException:
-						pass
-			    		
-  
-
+		
+			    	
 def main():
+	with open(writeName) as csvFile:
+		ogReader = csv.reader(csvFile, delimiter=',', quotechar='"')
+		for row in ogReader:
+			readEmails.add(row[0])
 	batchInvite()
-
 
 main()
 
@@ -108,5 +106,3 @@ Store:
 # add flags in the python for different things
 #requesto through terminal inputs for token and channel
 '''
-
-
