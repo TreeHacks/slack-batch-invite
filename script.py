@@ -7,35 +7,37 @@ Input a list of emails (on a text document for example) - Check
 
 Read those emails onto an array - Check
 
-Invite people (rate limited)
+Invite people (rate limited) - check
 
-When the invalid error message is returned stop
+When the invalid error message is returned stop - check
 
 Ping every 5 seconds
 
-If it allows, then keep sending rate limited emails
+If it allows, then keep sending rate limited emails - check
 
 Have a dashboard of sorts that shows which ones are sent and which ones are haven’t'''
 
 import requests
 import json
 import time
+import ratelimit
+from ratelimit import limits, sleep_and_retry
+import csv
 
 
 #Constants
 token = "XXX"
 channel = "C0000000"
-fileName = "emails.txt"
-
-emailList = []
-
-#response = requests.get('https://slack.com/api/users.admin.invite?token=XXX&email=test@email.com&channels=C000000')
+fileName = "email.csv"
+writeName = "emailDone.csv"
 
 def inputEmails():
 	with open(fileName) as file_in:
 		for email in file_in:
 			emailList.append(email)
 
+ONE_MINUTE = 60
+@limits(calls = 240, period = ONE_MINUTE)
 def APICall(email):
 	response = requests.get('https://slack.com/api/users.admin.invite?token=' + token + '&email=' + email + "&channels=" + channel)
 
@@ -46,25 +48,34 @@ def APICall(email):
 
 
 def batchInvite():
-	i = 0
-	while (i < len(emailList)):
-		email = emailList[i]
-		time.sleep(0.2)
-		result = APICall(email)
+	with open(fileName) as csvFile:
+		reader = csv.reader(csvFile, delimiter=',', quotechar='"')
+		for row in reader:
+			email = str(row[0])
+			if row[1] != 1:
+				print(email)
+				work = 0
 
-		print(email, result)
-		
-		if result["ok"] == True:
-			if result["error"] == "invite_limit_reached":
-				time.sleep(0.2)
+				while (work == 0):
+					try:
+						result = APICall(email)
+						if result["ok"] == False:
+							if result["error"] == "invite_limit_reached":
+								time.sleep(0.2)
+							elif result["error"] == "already_in_team" or result["error"] == "already_invited":
+								work = 1
 
-		else:
-			print(i)
-			i = i + 1
+						elif result["ok"] == True:
+							work = 1
+							with open(writeName, 'a') as f:
+							    writer = csv.writer(f)
+							    writer.writerow([email, "1"])
+					except ratelimit.RateLimitException:
+						pass
+			    		
+  
 
 def main():
-	inputEmails()
-	print(emailList)
 	batchInvite()
 
 
@@ -91,9 +102,8 @@ Store:
 
 #to-do 
 #use a URL formatter to make the above look prettier
-# error handling with different status codes
 # add flags in the python for different things
-#proper rate limiting
+#requesto through terminal inputs for token and channel
 '''
 
 
